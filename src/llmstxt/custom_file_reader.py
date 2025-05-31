@@ -50,9 +50,9 @@ class CustomFileReader:
             f"Loading documents from {repo_path} using custom file reader..."
         )
 
-        # Normalize extensions (ensure they start with dot)
+        # Normalize extensions (case-insensitive, handle with/without dot)
         normalized_extensions = [
-            ext if ext.startswith(".") else f".{ext}" for ext in extensions
+            ext.lower().lstrip('.') for ext in extensions
         ]
         self.logger.info(f"Using file extensions: {normalized_extensions}")
 
@@ -68,22 +68,23 @@ class CustomFileReader:
             raise ValueError(f"Invalid repository path: {repo_path}")
 
         # Log files in directory for debugging
-        self.logger.info("Files in repository directory:")
-        for file_path in repo_dir.glob("**/*"):
-            if file_path.is_file():
-                self.logger.info(f"  Found file: {file_path}")
-
-        # Process all files in the directory recursively
-        for file_path in repo_dir.glob("**/*"):
+        self.logger.info("Repository contents:")
+        for root, dirs, files in os.walk(repo_path):
+            # Don't skip hidden directories
+            for file in files:
+                file_path = Path(root) / file
+                # Only skip hidden files, not files in hidden directories
+                if file.startswith('.') and file != '.':
+                    self.logger.debug(f"Skipping hidden file: {file_path}")
+                    continue
             # Skip if not a file
             if not file_path.is_file():
                 continue
 
-            # Skip if extension not in list
-            if (
-                normalized_extensions
-                and file_path.suffix.lower() not in normalized_extensions
-            ):
+            # Check extension (case-insensitive)
+            file_ext = file_path.suffix.lstrip('.').lower()
+            if normalized_extensions and file_ext not in normalized_extensions:
+                self.logger.debug(f"Skipping file with unmatched extension: {file_path}")
                 continue
 
             # Skip if matches exclusion pattern
