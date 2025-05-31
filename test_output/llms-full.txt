@@ -1,0 +1,20 @@
+# Repository Analysis - Detailed Report
+
+## File Summaries
+
+### Summary of README.md
+
+This is a mock summary of Markdown documentation.
+
+### Summary of test_gitignore.py
+
+This is a mock summary of Python code with identified functions and classes.
+
+### Summary of test_cli.py
+
+This is a mock summary of Python code with identified functions and classes.
+
+### Summary of test_integration.py
+
+This is a mock summary of Python code with identified functions and classes.
+
