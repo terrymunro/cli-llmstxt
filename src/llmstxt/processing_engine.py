@@ -8,7 +8,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Dict, Tuple
-from llama_index.core.schema import Document
+from llama_index.core.schema import Document, NodeWithScore
 
 from llama_index.core.readers import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter
@@ -262,8 +262,11 @@ class ProcessingEngine:
                 )
                 response_synthesizer.text_qa_template = prompt_template
 
-            # Generate summary
-            summary = response_synthesizer.synthesize(query="", nodes=nodes)
+            # Convert nodes to NodeWithScore
+            nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]
+            
+            # Generate summary using wrapped nodes
+            summary = response_synthesizer.synthesize(query="", nodes=nodes_with_score)
 
             return f"### Summary of {file_path}\n\n{summary.response}\n\n"
 
@@ -316,8 +319,11 @@ class ProcessingEngine:
                 )
                 response_synthesizer.text_qa_template = OVERALL_SUMMARY_PROMPT
 
-            # Generate summary
-            summary = response_synthesizer.synthesize(query="", nodes=nodes)
+            # Convert nodes to NodeWithScore
+            nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]
+            
+            # Generate summary using wrapped nodes
+            summary = response_synthesizer.synthesize(query="", nodes=nodes_with_score)
 
             return f"# Repository Summary\n\n{summary.response}\n"
 
