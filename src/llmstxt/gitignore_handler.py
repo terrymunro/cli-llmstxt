@@ -100,10 +100,10 @@ class GitIgnoreHandler:
         Returns:
             bool: True if the file should be ignored, False otherwise.
         """
-        try:
-            if not self.ignore_patterns:
-                return False
+        if not self.ignore_patterns:
+            return False
 
+        try:
             file_path_obj = Path(file_path)
             if not file_path_obj.exists():
                 self.logger.debug(f"File does not exist: {file_path}")
@@ -119,10 +119,10 @@ class GitIgnoreHandler:
                 self.logger.debug(f"File outside repository: {file_path}")
                 return False
 
-        # Track ignore state (can be overridden by negation patterns)
-        is_ignored = False
+            # Track ignore state (can be overridden by negation patterns)
+            is_ignored = False
 
-        # Process patterns in order (later patterns can override earlier ones)
+            # Process patterns in order (later patterns can override earlier ones)
         for pattern, is_negation, gitignore_dir in self.ignore_patterns:
             # Check if this gitignore file applies to this file's location
             try:
