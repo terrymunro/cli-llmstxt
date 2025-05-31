@@ -8,6 +8,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Dict, Tuple
+from llama_index.core.schema import Document
 
 from llama_index.core.readers import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter
@@ -48,10 +49,10 @@ class ProcessingEngine:
         if use_mock:
             from llmstxt.mock_llm import MockLLM
 
-            self.llm = MockLLM(model="gpt-4o-mini")
+            self.llm = MockLLM(model="gpt-3.5-turbo")
             self.logger.info("Using mock LLM for testing")
         else:
-            self.llm = OpenAI(model="gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"))
+            self.llm = OpenAI(model="gpt-3.5-turbo", api_key=os.getenv("OPENAI_API_KEY"))
 
         # Initialize node parsers
         self.markdown_parser = MarkdownNodeParser()
@@ -288,14 +289,8 @@ class ProcessingEngine:
                 truncated_content = full_content
 
             # Create nodes from truncated content
-            nodes = self.sentence_splitter.get_nodes_from_documents(
-                [
-                    {
-                        "text": truncated_content,
-                        "metadata": {"file_path": "llms-full.txt"},
-                    }
-                ]
-            )
+            doc = Document(text=truncated_content, metadata={"file_path": "llms-full.txt"})
+            nodes = self.sentence_splitter.get_nodes_from_documents([doc])
 
             # Create response synthesizer with overall summary prompt
             from llmstxt.prompts import OVERALL_SUMMARY_PROMPT
