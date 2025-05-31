@@ -51,9 +51,7 @@ class CustomFileReader:
         )
 
         # Normalize extensions (case-insensitive, handle with/without dot)
-        normalized_extensions = [
-            ext.lower().lstrip('.') for ext in extensions
-        ]
+        normalized_extensions = [ext.lower().lstrip(".") for ext in extensions]
         self.logger.info(f"Using file extensions: {normalized_extensions}")
 
         # Create a list to store documents
@@ -74,7 +72,7 @@ class CustomFileReader:
             for file in files:
                 file_path = Path(root) / file
                 # Only skip hidden files, not files in hidden directories
-                if file.startswith('.') and file != '.':
+                if file.startswith(".") and file != ".":
                     self.logger.debug(f"Skipping hidden file: {file_path}")
                     continue
             # Skip if not a file
@@ -82,9 +80,11 @@ class CustomFileReader:
                 continue
 
             # Check extension (case-insensitive)
-            file_ext = file_path.suffix.lstrip('.').lower()
+            file_ext = file_path.suffix.lstrip(".").lower()
             if normalized_extensions and file_ext not in normalized_extensions:
-                self.logger.debug(f"Skipping file with unmatched extension: {file_path}")
+                self.logger.debug(
+                    f"Skipping file with unmatched extension: {file_path}"
+                )
                 continue
 
             # Skip if matches exclusion pattern

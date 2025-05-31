@@ -8,12 +8,12 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-  "llama-index==0.10.10",
-  "llama-index-llms-openai==0.1.5",
-  "llama-index-readers-file==0.1.4",
-  "gitpython==3.1.41",
-  "python-dotenv==1.0.0",
-  "openai==1.12.0",
+  "llama-index",
+  "llama-index-llms-openai",
+  "llama-index-readers-file",
+  "gitpython",
+  "python-dotenv",
+  "openai",
 ]
 
 [project.scripts]
@@ -28,3 +28,6 @@ dev = [
     "pyright>=1.1.401",
     "ruff>=0.11.11",
 ]
+
+[tool.uv]
+upgrade = true

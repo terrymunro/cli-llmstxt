@@ -56,7 +56,9 @@ class ProcessingEngine:
             model_name = "gpt-4o-mini"
             if model_name.startswith("gpt-4o"):
                 # Bypass validation for GPT-4o models
-                self.llm = OpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"), strict=False)
+                self.llm = OpenAI(
+                    model=model_name, api_key=os.getenv("OPENAI_API_KEY"), strict=False
+                )
             else:
                 self.llm = OpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -264,7 +266,7 @@ class ProcessingEngine:
 
             # Convert nodes to NodeWithScore
             nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]
-            
+
             # Generate summary using wrapped nodes
             summary = response_synthesizer.synthesize(query="", nodes=nodes_with_score)
 
@@ -298,7 +300,9 @@ class ProcessingEngine:
                 truncated_content = full_content
 
             # Create nodes from truncated content
-            doc = Document(text=truncated_content, metadata={"file_path": "llms-full.txt"})
+            doc = Document(
+                text=truncated_content, metadata={"file_path": "llms-full.txt"}
+            )
             nodes = self.sentence_splitter.get_nodes_from_documents([doc])
 
             # Create response synthesizer with overall summary prompt
@@ -321,7 +325,7 @@ class ProcessingEngine:
 
             # Convert nodes to NodeWithScore
             nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]
-            
+
             # Generate summary using wrapped nodes
             summary = response_synthesizer.synthesize(query="", nodes=nodes_with_score)
 
