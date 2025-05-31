@@ -1,3 +1,6 @@
+llms-full.txt
+llms.txt
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -360,3 +363,4 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+.aider*

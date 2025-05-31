@@ -252,8 +252,8 @@ class ProcessingEngine:
                 response_synthesizer = get_response_synthesizer(
                     response_mode=ResponseMode.TREE_SUMMARIZE,
                     llm=self.llm,
-                    prompt_template=prompt_template,
                 )
+                response_synthesizer.text_qa_template = prompt_template
 
             # Generate summary
             summary = response_synthesizer.synthesize(query="", nodes=nodes)
@@ -312,8 +312,8 @@ class ProcessingEngine:
                 response_synthesizer = get_response_synthesizer(
                     response_mode=ResponseMode.TREE_SUMMARIZE,
                     llm=self.llm,
-                    prompt_template=OVERALL_SUMMARY_PROMPT,
                 )
+                response_synthesizer.text_qa_template = OVERALL_SUMMARY_PROMPT
 
             # Generate summary
             summary = response_synthesizer.synthesize(query="", nodes=nodes)
