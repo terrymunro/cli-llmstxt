@@ -49,10 +49,16 @@ class ProcessingEngine:
         if use_mock:
             from llmstxt.mock_llm import MockLLM
 
-            self.llm = MockLLM(model="gpt-3.5-turbo")
+            self.llm = MockLLM(model="gpt-4o-mini")
             self.logger.info("Using mock LLM for testing")
         else:
-            self.llm = OpenAI(model="gpt-3.5-turbo", api_key=os.getenv("OPENAI_API_KEY"))
+            # Add special handling for GPT-4o models
+            model_name = "gpt-4o-mini"
+            if model_name.startswith("gpt-4o"):
+                # Bypass validation for GPT-4o models
+                self.llm = OpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"), strict=False)
+            else:
+                self.llm = OpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
 
         # Initialize node parsers
         self.markdown_parser = MarkdownNodeParser()
