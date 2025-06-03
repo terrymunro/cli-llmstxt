@@ -169,81 +169,67 @@ class GitIgnoreHandler:
                 if self._fnmatch_gitignore(part, pattern_without_slash):
                     return True
             # Also check if the pattern matches from root
-            return self._fnmatch_gitignore(file_path, pattern_without_slash + "/**")
+            # A pattern like "foo/" should match "foo" if it's a directory, or "foo/bar.txt".
+            # So, we match pattern_without_slash against the file_path itself if it's a directory,
+            # or against any directory component of file_path.
+            # Or if file_path starts with pattern_without_slash + "/"
+            if full_file_path.is_dir() and self._fnmatch_gitignore(file_path, pattern_without_slash):
+                return True
+            if self._fnmatch_gitignore(file_path, pattern_without_slash + "/*") or \
+               self._fnmatch_gitignore(file_path, pattern_without_slash): # Match "dir" against "dir"
+                 return True
+            # Check if any parent directory component matches
+            current_check_path = ""
+            for part in file_path.split('/'):
+                if not part: continue
+                current_check_path = f"{current_check_path}{part}"
+                if self._fnmatch_gitignore(current_check_path, pattern_without_slash):
+                    return True
+                current_check_path += "/"
 
-        # Handle patterns starting with '/' (absolute from git root)
+            return False # If none of the above, a dir-only pattern doesn't match a file like this.
+
+
+        # Handle patterns starting with '/' (absolute from git root of the .gitignore file)
         if pattern.startswith("/"):
             pattern = pattern[1:]  # Remove leading slash
-            # Match from the beginning of the path
+            # Match from the beginning of the path relative to .gitignore dir
             return self._fnmatch_gitignore(file_path, pattern)
 
-        # Handle patterns with '**' (recursive directory matching)
-        if "**" in pattern:
-            return self._match_recursive_pattern(file_path, pattern)
-
-        # Handle patterns with directory separators
-        if "/" in pattern:
+        # For patterns not starting with '/', and not ending with '/',
+        # they can match at any directory level if no other '/' is present.
+        # If '/' is present, it's a path relative to the .gitignore file's directory.
+        if "/" not in pattern:
+            # Pattern is like "file.txt" or "*.log"
+            # It should match the filename or any directory component.
+            path_parts = file_path.split("/")
+            if any(self._fnmatch_gitignore(part, pattern) for part in path_parts):
+                return True
+            # Fallback: check against the whole relative path (e.g. pattern "foo" matching "path/to/foo")
+            # This is implicitly covered by fnmatch if pattern has no wildcards, but explicit check is fine.
+            # Git's behavior: "foo" matches "foo" file or dir, and "dir/foo" file or dir.
             return self._fnmatch_gitignore(file_path, pattern)
 
-        # Simple filename pattern - match against any part of the path
-        path_parts = file_path.split("/")
-        filename = path_parts[-1]  # Just the filename
 
-        # Check if pattern matches the filename
-        if self._fnmatch_gitignore(filename, pattern):
-            return True
+        # If pattern contains '/' (but not at start or end, handled above), it's a relative path.
+        # e.g. "dir/file.log" or "dir/*.log"
+        # This is also the fallback for more complex patterns not caught by specific handlers.
+        # This also handles patterns with "**" by converting them to fnmatch compatible "*"
+        # This is a simplification for "**" but better than nothing.
+        # A more robust solution would be to convert gitignore glob to regex.
+        fnmatch_pattern = pattern.replace("**", "*") # Simple ** replacement
+        return self._fnmatch_gitignore(file_path, fnmatch_pattern)
 
-        # Check if pattern matches any directory name in the path
-        for part in path_parts[:-1]:  # Exclude the filename
-            if self._fnmatch_gitignore(part, pattern):
-                return True
+        # This was part of _match_recursive_pattern, which is now removed.
+        # The general fallback in _matches_pattern handles simple ** replacement.
+        pass # _match_recursive_pattern removed
 
-        # Also check if the pattern matches the entire path
-        return self._fnmatch_gitignore(file_path, pattern)
-
-    def _match_recursive_pattern(self, file_path: str, pattern: str) -> bool:
-        """
-        Handle patterns with '**' for recursive directory matching.
-
-        Args:
-            file_path (str): File path to match.
-            pattern (str): Pattern with '**' wildcards.
-
-        Returns:
-            bool: True if pattern matches, False otherwise.
-        """
-        # Convert '**' to a regex-like pattern for fnmatch
-        # '**/' matches zero or more directories
-        pattern_parts = pattern.split("**")
-
-        if len(pattern_parts) == 2:
-            prefix, suffix = pattern_parts
-            prefix = prefix.rstrip("/")
-            suffix = suffix.lstrip("/")
-
-            # Handle case where pattern is just '**'
-            if not prefix and not suffix:
-                return True
-
-            # Handle '**' at the beginning
-            if not prefix:
-                return file_path.endswith(suffix) or ("/" + suffix) in file_path
-
-            # Handle '**' at the end
-            if not suffix:
-                return file_path.startswith(prefix)
-
-            # Handle '**' in the middle
-            return file_path.startswith(prefix) and (
-                file_path.endswith(suffix) or ("/" + suffix) in file_path
-            )
-
-        # Multiple '**' patterns - use simple approach
-        return self._fnmatch_gitignore(file_path, pattern.replace("**", "*"))
 
     def _fnmatch_gitignore(self, path: str, pattern: str) -> bool:
         """
         Perform gitignore-style pattern matching using fnmatch.
+        Git patterns are case-sensitive by default on case-sensitive file systems.
+        fnmatch is case-sensitive on Unix-like systems.
 
         Args:
             path (str): Path to match.
@@ -252,10 +238,28 @@ class GitIgnoreHandler:
         Returns:
             bool: True if pattern matches, False otherwise.
         """
+        # Basic checks
+        if not pattern: # Empty pattern should not match anything
+            return False
+        if not path and pattern == ".": # Match current dir placeholder
+             return True
+
+
+        # fnmatch is generally good for gitignore patterns, except for '**'
+        # which we've simplified to '*' before calling this for some cases.
+        # Other gitignore specifics:
+        # - If the pattern ends with a slash, it matches only directories. (Handled before this func)
+        # - If a pattern contains a slash not at the end, it's matched relative to the .gitignore dir.
+        # - If a pattern does not contain a slash, it's matched against filename and dir components.
+
+        # Escape special characters for fnmatch if they are literal and not wildcards
+        # This is complex. For now, assume patterns are valid fnmatch patterns or simple literals.
         try:
             return fnmatch.fnmatch(path, pattern)
-        except (ValueError, TypeError):
-            # Fallback to simple string matching if fnmatch fails
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"fnmatch failed for path='{path}', pattern='{pattern}': {e}. Falling back to string check.")
+            # Fallback to simple string matching if fnmatch fails (e.g. invalid pattern for fnmatch)
+            # This is a very basic fallback and might not be accurate.
             return pattern in path
 
     def get_ignore_patterns_for_exclusions(self) -> List[str]:
