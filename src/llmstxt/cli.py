@@ -8,6 +8,13 @@ import argparse
 import os
 from pathlib import Path
 
+from src.llmstxt.config import (
+    DEFAULT_CODE_EXTENSIONS,
+    DEFAULT_OUTPUT_DIR,
+    MAX_FILE_SIZE_KB,
+    MAX_OVERALL_SUMMARY_INPUT_CHARS,
+)
+
 
 def parse_arguments():
     """
@@ -29,25 +36,28 @@ def parse_arguments():
     # Optional arguments
     parser.add_argument(
         "--code_extensions",
-        default=".py,.js,.ts,.java,.go,.rb,.php,.cs,.c,.cpp,.h,.hpp,.rs,.kt,.scala,.md",
+        default=DEFAULT_CODE_EXTENSIONS,
         help="Comma-separated list of file extensions to process.",
     )
 
     parser.add_argument(
-        "--output_dir", default=".", help="Directory to save output files."
+        "--output_dir",
+        default=DEFAULT_OUTPUT_DIR,
+        type=Path,
+        help="Directory to save output files.",
     )
 
     parser.add_argument(
         "--max_file_size_kb",
         type=int,
-        default=256,
+        default=MAX_FILE_SIZE_KB,
         help="Maximum file size in KB to process. 0 for no limit.",
     )
 
     parser.add_argument(
         "--max_overall_summary_input_chars",
         type=int,
-        default=150000,
+        default=MAX_OVERALL_SUMMARY_INPUT_CHARS,
         help="Max characters from llms-full.txt for final summary.",
     )
 

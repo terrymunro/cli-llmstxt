@@ -11,6 +11,7 @@ from llama_index.core.response_synthesizers import (
     get_response_synthesizer,
     ResponseMode,
 )
+# get_response_synthesizer will be used via LLMService
 
 from llmstxt.prompts import (
     FLASK_API_INFERENCE_PROMPT,
@@ -18,22 +19,25 @@ from llmstxt.prompts import (
     PYTHON_LIBRARY_INFERENCE_PROMPT,
 )
 
+# Import LLMService
+from llmstxt.llm_service import LLMService
+
 
 class InterfaceAnalysis:
     """
     Analyzes code to infer public interfaces when documentation is insufficient.
     """
 
-    def __init__(self, llm, use_mock: bool = False):
+    def __init__(self, llm_service: LLMService):
         """
         Initialize the interface analysis module.
 
         Args:
-            llm: LLM instance for analysis.
-            use_mock (bool): Whether to use mock LLM for testing.
+            llm_service (LLMService): The LLM service instance.
         """
-        self.llm = llm
-        self.use_mock = use_mock
+        self.llm_service = llm_service # Store the service
+        # self.llm = llm # No longer needed here directly
+        # self.use_mock = use_mock # No longer needed here directly
         self.logger = logging.getLogger(__name__)
 
     def should_analyze_interface(
@@ -155,21 +159,11 @@ class InterfaceAnalysis:
         """
         self.logger.info(f"Extracting Flask API endpoints from: {file_path}")
 
-        # Create response synthesizer with Flask API inference prompt
-        if self.use_mock:
-            from llmstxt.mock_llm import get_mock_response_synthesizer
-
-            response_synthesizer = get_mock_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=FLASK_API_INFERENCE_PROMPT,
-            )
-        else:
-            response_synthesizer = get_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=FLASK_API_INFERENCE_PROMPT,
-            )
+        # Create response synthesizer using LLMService
+        response_synthesizer = self.llm_service.get_response_synthesizer(
+            response_mode=ResponseMode.TREE_SUMMARIZE,
+            prompt_template=FLASK_API_INFERENCE_PROMPT
+        )
 
         # Generate interface description
         interface = response_synthesizer.synthesize(query="", nodes=nodes)
@@ -194,21 +188,11 @@ class InterfaceAnalysis:
         """
         self.logger.info(f"Extracting FastAPI API endpoints from: {file_path}")
 
-        # Create response synthesizer with FastAPI API inference prompt
-        if self.use_mock:
-            from llmstxt.mock_llm import get_mock_response_synthesizer
-
-            response_synthesizer = get_mock_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=FASTAPI_API_INFERENCE_PROMPT,
-            )
-        else:
-            response_synthesizer = get_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=FASTAPI_API_INFERENCE_PROMPT,
-            )
+        # Create response synthesizer using LLMService
+        response_synthesizer = self.llm_service.get_response_synthesizer(
+            response_mode=ResponseMode.TREE_SUMMARIZE,
+            prompt_template=FASTAPI_API_INFERENCE_PROMPT
+        )
 
         # Generate interface description
         interface = response_synthesizer.synthesize(query="", nodes=nodes)
@@ -233,21 +217,11 @@ class InterfaceAnalysis:
         """
         self.logger.info(f"Extracting Python public interface from: {file_path}")
 
-        # Create response synthesizer with Python library inference prompt
-        if self.use_mock:
-            from llmstxt.mock_llm import get_mock_response_synthesizer
-
-            response_synthesizer = get_mock_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=PYTHON_LIBRARY_INFERENCE_PROMPT,
-            )
-        else:
-            response_synthesizer = get_response_synthesizer(
-                response_mode=ResponseMode.TREE_SUMMARIZE,
-                llm=self.llm,
-                prompt_template=PYTHON_LIBRARY_INFERENCE_PROMPT,
-            )
+        # Create response synthesizer using LLMService
+        response_synthesizer = self.llm_service.get_response_synthesizer(
+            response_mode=ResponseMode.TREE_SUMMARIZE,
+            prompt_template=PYTHON_LIBRARY_INFERENCE_PROMPT
+        )
 
         # Generate interface description
         interface = response_synthesizer.synthesize(query="", nodes=nodes)
