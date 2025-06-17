@@ -15,10 +15,10 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.node_parser import MarkdownNodeParser
 from llama_index.core.node_parser import CodeSplitter
 from llama_index.core.response_synthesizers import (
-    get_response_synthesizer,
+    get_response_synthesizer, # Will be used via LLMService
     ResponseMode,
 )
-from llama_index.llms.openai import OpenAI
+# from llama_index.llms.openai import OpenAI # No longer directly used
 
 from llmstxt.prompts import (
     MARKDOWN_SUMMARY_PROMPT,
@@ -27,40 +27,28 @@ from llmstxt.prompts import (
     GENERIC_CODE_SUMMARY_PROMPT,
 )
 
+# Import LLMService
+from llmstxt.llm_service import LLMService
+
 
 class ProcessingEngine:
     """
     Core analysis component that processes repository files and generates summaries.
     """
 
-    def __init__(self, max_file_size_kb: int = 256, use_mock: bool = False):
+    def __init__(self, llm_service: LLMService, max_file_size_kb: int = 256):
         """
         Initialize the processing engine.
 
         Args:
+            llm_service (LLMService): The LLM service instance.
             max_file_size_kb (int): Maximum file size in KB to process.
-            use_mock (bool): Whether to use mock LLM for testing.
         """
         self.max_file_size_kb = max_file_size_kb
         self.logger = logging.getLogger(__name__)
-        self.use_mock = use_mock
-
-        # Initialize LLM
-        if use_mock:
-            from llmstxt.mock_llm import MockLLM
-
-            self.llm = MockLLM(model="gpt-4o-mini")
-            self.logger.info("Using mock LLM for testing")
-        else:
-            # Add special handling for GPT-4o models
-            model_name = "gpt-4o-mini"
-            if model_name.startswith("gpt-4o"):
-                # Bypass validation for GPT-4o models
-                self.llm = OpenAI(
-                    model=model_name, api_key=os.getenv("OPENAI_API_KEY"), strict=False
-                )
-            else:
-                self.llm = OpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
+        self.llm_service = llm_service # Store the service
+        # self.use_mock = use_mock # No longer needed here directly
+        # LLM initialization is removed from here
 
         # Initialize node parsers
         self.markdown_parser = MarkdownNodeParser()
@@ -107,58 +95,76 @@ class ProcessingEngine:
             List[Dict]: List of loaded documents with metadata.
         """
         self.logger.info(f"Loading documents from {repo_path}...")
+        all_docs = []
+        processed_docs = [] # Renamed 'documents' to 'processed_docs' to avoid confusion
 
-        # Convert extensions to format required by SimpleDirectoryReader
-        # Make sure to remove the leading dot and handle both formats (.py and py)
-        required_exts = [ext.lstrip(".") for ext in extensions]
-        self.logger.info(f"Using file extensions: {required_exts}")
+        # Check if directory exists
+        repo_dir = Path(repo_path)
+        if not repo_dir.exists() or not repo_dir.is_dir():
+            self.logger.error(
+                f"Repository path does not exist or is not a directory: {repo_path}"
+            )
+            raise ValueError(f"Invalid repository path: {repo_path}")
 
+        # Attempt to use SimpleDirectoryReader first
+        sdr_failed_or_empty = False
         try:
-            # Create a list to store documents
-            documents = []
+            self.logger.info("Attempting to load documents with SimpleDirectoryReader...")
+            # SimpleDirectoryReader requires string extensions without leading dots
+            sdr_extensions = [ext.lstrip(".") for ext in extensions if ext]
+            reader = SimpleDirectoryReader(
+                input_dir=str(repo_path), # Ensure input_dir is a string
+                required_exts=sdr_extensions if sdr_extensions else None, # Pass None if no specific extensions
+                recursive=True,
+                exclude=exclusions, # SimpleDirectoryReader handles gitignore-style patterns
+                file_metadata=lambda filename: {"file_path": filename},
+            )
+            all_docs = reader.load_data()
+            self.logger.info(f"SimpleDirectoryReader loaded {len(all_docs)} documents.")
 
-            # Check if directory exists and has files
-            repo_dir = Path(repo_path)
-            if not repo_dir.exists() or not repo_dir.is_dir():
-                self.logger.error(
-                    f"Repository path does not exist or is not a directory: {repo_path}"
+            # Check if SDR returned empty results when files were expected
+            if not all_docs:
+                # Heuristic: Check if there are any files matching extensions in the repo path
+                has_matching_files = any(
+                    any(f.match(f"*{ext}") for ext in extensions)
+                    for f in repo_dir.rglob("*") if f.is_file()
                 )
-                raise ValueError(f"Invalid repository path: {repo_path}")
+                if has_matching_files:
+                    self.logger.warning(
+                        "SimpleDirectoryReader loaded 0 documents, but matching files appear to exist."
+                    )
+                    sdr_failed_or_empty = True
+                else:
+                    self.logger.info("SimpleDirectoryReader loaded 0 documents, and no matching files were found by heuristic.")
 
-            # Log files in directory for debugging
-            self.logger.info("Files in repository directory:")
-            for file_path in repo_dir.glob("**/*"):
-                if file_path.is_file():
-                    self.logger.info(f"  Found file: {file_path}")
+        except Exception as e:
+            self.logger.warning(
+                f"SimpleDirectoryReader failed with error: {str(e)}. Will attempt fallback."
+            )
+            sdr_failed_or_empty = True
+            all_docs = [] # Ensure all_docs is empty for fallback logic
 
-            # Try to use SimpleDirectoryReader, fall back to custom reader if not available
+        # Fallback to CustomFileReader if SimpleDirectoryReader failed or returned empty unexpectedly
+        if sdr_failed_or_empty:
+            self.logger.warning("Falling back to CustomFileReader.")
             try:
-                reader = SimpleDirectoryReader(
-                    input_dir=repo_path,
-                    recursive=True,
-                    exclude=exclusions,
-                    file_metadata=lambda filename: {"file_path": filename},
-                )
-                all_docs = reader.load_data()
-            except Exception as e:
-                self.logger.warning(
-                    f"SimpleDirectoryReader failed: {str(e)}. Using custom file reader."
-                )
                 from llmstxt.custom_file_reader import CustomFileReader
-
                 custom_reader = CustomFileReader()
                 all_docs = custom_reader.load_data(
-                    repo_path=repo_path,
-                    extensions=extensions,
+                    repo_path=str(repo_path), # Ensure repo_path is a string
+                    extensions=extensions, # CustomFileReader handles extensions with leading dots
                     exclusions=exclusions,
                     max_file_size_kb=self.max_file_size_kb,
-                    gitignore_handler=gitignore_handler,
+                    gitignore_handler=gitignore_handler, # Pass the actual handler
                 )
+                self.logger.info(f"CustomFileReader loaded {len(all_docs)} documents.")
+            except Exception as e_custom:
+                self.logger.error(f"CustomFileReader also failed: {str(e_custom)}")
+                # If CustomFileReader also fails, re-raise the exception or handle as appropriate
+                raise  # Or return empty list: return []
 
-            # all_docs is already loaded in the try/except block above
-
-            # Filter documents by size
-            for doc in all_docs:
+        # Filter documents by size and content (common post-processing for both readers)
+        for doc in all_docs:
                 file_path = doc.metadata.get("file_path", "")
                 file_size_kb = os.path.getsize(file_path) / 1024
 
@@ -172,14 +178,14 @@ class ProcessingEngine:
                     self.logger.warning(f"Skipping empty file: {file_path}")
                     continue
 
-                documents.append(doc)
+                processed_docs.append(doc)
 
-            self.logger.info(f"Loaded {len(documents)} documents")
-            return documents
+            self.logger.info(f"Successfully processed and filtered {len(processed_docs)} documents.")
+            return processed_docs
 
-        except Exception as e:
-            self.logger.error(f"Error loading documents: {str(e)}")
-            raise
+        except Exception as e: # Catching outer scope exceptions during loading/filtering
+            self.logger.error(f"An error occurred during the document loading process: {str(e)}")
+            raise # Re-raise the exception to be caught by the main error handler
 
     def parse_document(self, document: Dict) -> Tuple[List, str]:
         """
@@ -248,21 +254,11 @@ class ProcessingEngine:
             else:
                 prompt_template = GENERIC_CODE_SUMMARY_PROMPT
 
-            # Create response synthesizer
-            if self.use_mock:
-                from llmstxt.mock_llm import get_mock_response_synthesizer
-
-                response_synthesizer = get_mock_response_synthesizer(
-                    response_mode=ResponseMode.TREE_SUMMARIZE,
-                    llm=self.llm,
-                    prompt_template=prompt_template,
-                )
-            else:
-                response_synthesizer = get_response_synthesizer(
-                    response_mode=ResponseMode.TREE_SUMMARIZE,
-                    llm=self.llm,
-                )
-                response_synthesizer.text_qa_template = prompt_template
+            # Create response synthesizer using LLMService
+            response_synthesizer = self.llm_service.get_response_synthesizer(
+                response_mode=ResponseMode.TREE_SUMMARIZE,
+                prompt_template=prompt_template
+            )
 
             # Convert nodes to NodeWithScore
             nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]
@@ -308,20 +304,10 @@ class ProcessingEngine:
             # Create response synthesizer with overall summary prompt
             from llmstxt.prompts import OVERALL_SUMMARY_PROMPT
 
-            if self.use_mock:
-                from llmstxt.mock_llm import get_mock_response_synthesizer
-
-                response_synthesizer = get_mock_response_synthesizer(
-                    response_mode=ResponseMode.TREE_SUMMARIZE,
-                    llm=self.llm,
-                    prompt_template=OVERALL_SUMMARY_PROMPT,
-                )
-            else:
-                response_synthesizer = get_response_synthesizer(
-                    response_mode=ResponseMode.TREE_SUMMARIZE,
-                    llm=self.llm,
-                )
-                response_synthesizer.text_qa_template = OVERALL_SUMMARY_PROMPT
+            response_synthesizer = self.llm_service.get_response_synthesizer(
+                response_mode=ResponseMode.TREE_SUMMARIZE,
+                prompt_template=OVERALL_SUMMARY_PROMPT
+            )
 
             # Convert nodes to NodeWithScore
             nodes_with_score = [NodeWithScore(node=node, score=1.0) for node in nodes]

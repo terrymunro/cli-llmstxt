@@ -57,13 +57,14 @@ def get_mock_response_synthesizer(response_mode=None, llm=None, prompt_template=
 
     Args:
         response_mode: Not used in mock
-        llm: Not used in mock
-        prompt_template: Not used in mock
+        llm: LLM instance (MockLLM) to be used by the synthesizer.
+        prompt_template: Prompt template to use.
 
     Returns:
         MockResponseSynthesizer: Mock response synthesizer
     """
-    return MockResponseSynthesizer(prompt_template)
+    # llm argument is now present, can be used if MockResponseSynthesizer needs it
+    return MockResponseSynthesizer(prompt_template=prompt_template, llm=llm)
 
 
 class MockResponseSynthesizer:
@@ -71,15 +72,17 @@ class MockResponseSynthesizer:
     Mock response synthesizer for testing.
     """
 
-    def __init__(self, prompt_template):
+    def __init__(self, prompt_template, llm=None):
         """
         Initialize the mock response synthesizer.
 
         Args:
             prompt_template: Prompt template to use
+            llm: LLM instance (MockLLM) to use. If None, a new MockLLM is created.
         """
         self.prompt_template = prompt_template
-        self.mock_llm = MockLLM()
+        # self.mock_llm = MockLLM() # OLD
+        self.mock_llm = llm if llm else MockLLM() # NEW, use passed llm or create one
 
     def synthesize(self, query="", nodes=None):
         """
