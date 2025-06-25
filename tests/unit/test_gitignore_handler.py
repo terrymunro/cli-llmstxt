@@ -18,7 +18,6 @@ class TestGitIgnoreHandler(unittest.TestCase):
 
         (self.temp_dir_path / "build").mkdir()
         (self.temp_dir_path / "build" / "output.o").write_text("binary")
-        (self.temp_dir_path / "build" / "deep_build" / "output2.o").mkdir(parents=True, exist_ok=True)
         (self.temp_dir_path / "build" / "deep_build" / "output2.o").write_text("binary2")
 
 
