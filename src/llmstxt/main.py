@@ -15,8 +15,8 @@ from llmstxt.interface_analysis import InterfaceAnalysis
 from llmstxt.output_generator import OutputGenerator
 from llmstxt.logging_config import setup_logging
 from llmstxt.gitignore_handler import GitIgnoreHandler
-from src.llmstxt.config import DEFAULT_EXCLUSIONS
-from src.llmstxt.llm_service import LLMService # Import LLMService
+from llmstxt.config import DEFAULT_EXCLUSIONS
+from llmstxt.llm_service import LLMService # Import LLMService
 
 
 def _setup_logging_and_env():
