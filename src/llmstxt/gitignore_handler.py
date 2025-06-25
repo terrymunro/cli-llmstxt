@@ -146,60 +146,173 @@ class GitIgnoreHandler:
     ) -> bool:
         """
         Check if a file path matches a gitignore pattern.
+        Rules are based on https://git-scm.com/docs/gitignore.
 
         Args:
-            file_path (str): Relative file path with forward slashes.
-            pattern (str): Gitignore pattern to match against.
-            full_file_path (Path): Full Path object for directory checks.
+            file_path (str): Relative file path from gitignore_dir, using forward slashes.
+            pattern (str): Gitignore pattern.
+            full_file_path (Path): Absolute Path object for the file/directory being checked.
+                                   Used to determine if a matched path is a directory.
+            # gitignore_dir (Path): Base directory of the .gitignore file. Implicitly self.repo_path for patterns
+            #                     from repo root .gitignore, or parent of specific .gitignore.
+            #                     The file_path is already relative to the correct gitignore_dir.
 
         Returns:
             bool: True if the pattern matches, False otherwise.
         """
-        # Handle directory-only patterns (ending with '/')
-        if pattern.endswith("/"):
-            pattern_without_slash = pattern[:-1]
-            # For directory patterns, check if any part of the path matches
-            path_parts = file_path.split("/")
-            # Remove filename if this is a file
-            if not full_file_path.is_dir():
-                path_parts = path_parts[:-1]
+        original_pattern = pattern # For logging or specific checks if needed
 
-            # Check if any directory in the path matches the pattern
-            for part in path_parts:
-                if self._fnmatch_gitignore(part, pattern_without_slash):
-                    return True
-            # Also check if the pattern matches from root
-            return self._fnmatch_gitignore(file_path, pattern_without_slash + "/**")
+        # Normalize pattern: remove trailing spaces unless they are escaped
+        # Git automatically strips unescaped trailing spaces.
+        # For simplicity, we assume patterns are already stripped by _parse_single_gitignore.
+        # If a pattern has specific escaped spaces, fnmatch should handle them.
 
-        # Handle patterns starting with '/' (absolute from git root)
-        if pattern.startswith("/"):
-            pattern = pattern[1:]  # Remove leading slash
-            # Match from the beginning of the path
-            return self._fnmatch_gitignore(file_path, pattern)
+        # Handle directory-only patterns (trailing '/')
+        is_dir_pattern = pattern.endswith('/')
+        if is_dir_pattern:
+            pattern = pattern[:-1]
+            if not pattern: # Pattern was just "/"
+                return False # Should not happen with prior stripping, but good to guard.
 
-        # Handle patterns with '**' (recursive directory matching)
+        # Handle patterns with "**" - these are complex and fnmatch handles them well.
         if "**" in pattern:
-            return self._match_recursive_pattern(file_path, pattern)
+            # If original was "foo/**/", pattern is now "foo/**".
+            # This should match "foo/bar/" or "foo/bar/baz.txt" if "foo/bar" is part of path.
+            # The is_dir_pattern check will be applied after fnmatch.
+            match = self._fnmatch_gitignore(file_path, pattern)
+            if match and is_dir_pattern:
+                # Pattern "dir/" (effective "dir"):
+                # - file_path "dir": match if full_file_path is_dir.
+                # - file_path "dir/file": match. (dir component matches)
+                # - file_path "other/dir": match if "other/dir" (full_file_path) is_dir.
+                # - file_path "other/dir/file": match. (dir component matches)
 
-        # Handle patterns with directory separators
+                # If fnmatch says file_path 'a/b/c' matches pattern 'a/b', and is_dir_pattern was true,
+                # we need to check if 'a/b' is a directory.
+                # This is hard because fnmatch doesn't tell us *which part* of file_path matched.
+                # A common interpretation: if a dir pattern like "build/" matches "build/foo.o",
+                # it's because "build" is a directory.
+                # If the full file_path matches the pattern (e.g. file_path="build", pattern="build")
+                if file_path == pattern:
+                    return full_file_path.is_dir()
+                # If file_path starts with pattern + "/" (e.g. file_path="build/foo", pattern="build")
+                if file_path.startswith(pattern + "/"):
+                    return True # Implies the 'pattern' part refers to a directory
+                # For more complex ** cases like "foo/**/bar/" this gets harder.
+                # For now, trust that if fnmatch works, the structure implies dir for **.
+                # A more robust check might be needed if this proves insufficient.
+                # A simple check: if the matched path is not a directory, but pattern expects one.
+                if not full_file_path.is_dir() and not '/' in file_path[len(pattern):]:
+                     # e.g. pattern `foo/`, file `foo` (a file). file_path=`foo`, pattern=`foo`.
+                     # Here, file_path[len(pattern):] is empty.
+                     return False
+            return match
+
+        # Handle patterns starting with "/" (anchored to gitignore_dir)
+        if pattern.startswith('/'):
+            pattern = pattern[1:]
+            # file_path is already relative to gitignore_dir.
+            match = self._fnmatch_gitignore(file_path, pattern)
+            if match and is_dir_pattern:
+                # Path "foo" (file) vs pattern "/foo/" (now "foo")
+                if file_path == pattern:
+                    return full_file_path.is_dir()
+                # Path "foo/bar.txt" vs pattern "/foo/" (now "foo")
+                # This implies 'foo' must be a directory.
+                # fnmatch would match "foo/bar.txt" with "foo*".
+                # We need to ensure that if pattern is "foo", it matches "foo/" path segment.
+                if file_path.startswith(pattern + "/"):
+                    return True
+                return False # Did not match directory structure
+            return match
+
+        # Handle other patterns containing "/" (not starting with "/", no "**")
+        # These are relative to gitignore_dir.
+        # e.g., "foo/bar" or "src/*.c"
         if "/" in pattern:
-            return self._fnmatch_gitignore(file_path, pattern)
+            match = self._fnmatch_gitignore(file_path, pattern)
+            if match and is_dir_pattern:
+                if file_path == pattern:
+                    return full_file_path.is_dir()
+                if file_path.startswith(pattern + "/"): # e.g. pattern "doc/", file "doc/readme.txt"
+                    return True
+                # If pattern "build/logs" (from "build/logs/") matches file_path "build/logs/today.log"
+                # this implies "build/logs" is a directory.
+                # This is usually fine. Consider if full_file_path.is_dir() is needed for exact match.
+                # If pattern `foo/bar/` (now `foo/bar`) matches filepath `foo/bar` (a file), then no match.
+                if file_path == pattern and not full_file_path.is_dir():
+                    return False
+            return match
 
-        # Simple filename pattern - match against any part of the path
-        path_parts = file_path.split("/")
-        filename = path_parts[-1]  # Just the filename
+        # Handle patterns without "/" (e.g., "*.log", "foo")
+        # These can match at any level.
+        # file_path is like "some/path/to/file.log"
+        # pattern is like "*.log" or "foo"
 
-        # Check if pattern matches the filename
-        if self._fnmatch_gitignore(filename, pattern):
-            return True
+        # 1. Check against the basename of the file_path
+        if self._fnmatch_gitignore(Path(file_path).name, pattern):
+            if is_dir_pattern:
+                # Pattern "foo/", file_path "dir/foo". Basename "foo" matches.
+                # Check if full_file_path (".../dir/foo") is a directory.
+                return full_file_path.is_dir()
+            return True # Filename matches, and not a dir-only pattern for the filename itself.
 
-        # Check if pattern matches any directory name in the path
-        for part in path_parts[:-1]:  # Exclude the filename
-            if self._fnmatch_gitignore(part, pattern):
-                return True
+        # 2. If is_dir_pattern, it implies the pattern refers to a directory name.
+        #    This directory could be anywhere in the path.
+        #    e.g. pattern "target/" (now "target"), file_path "project/target/file.o"
+        #    This should match because "project/target" is a directory.
+        if is_dir_pattern:
+            # Check if any directory component in file_path matches 'pattern'
+            # and that component is indeed a directory in the filesystem.
+            # file_path is "a/b/c/d.txt", pattern "b" (from "b/")
+            # We need to check if "a/b" is a directory.
+            current_path_parts = Path(file_path).parts
+            for i in range(len(current_path_parts)):
+                # Check if the directory segment itself matches
+                if self._fnmatch_gitignore(current_path_parts[i], pattern):
+                    # Construct the path to this directory segment
+                    # It's relative to gitignore_dir. To check is_dir, need absolute or relative to CWD.
+                    # full_file_path is absolute. gitignore_dir is absolute.
+                    # Path relative to repo_path: gitignore_dir.relative_to(self.repo_path)
+                    # Path of current segment: gitignore_dir.joinpath(*current_path_parts[:i+1])
 
-        # Also check if the pattern matches the entire path
-        return self._fnmatch_gitignore(file_path, pattern)
+                    # Simpler: if file_path is "a/b/c.txt" and pattern is "b" (from "b/")
+                    # this means we are checking if "a/b" is a directory.
+                    # This is true if file_path starts with "a/b/"
+                    # This means path_to_check = '.../b/'
+                    # This is equivalent to: file_path contains 'pattern/' segment.
+                    if (pattern + "/") in file_path: # e.g. "b/" in "a/b/c.txt"
+                         return True
+            return False # No directory component matched the dir_pattern.
+
+        # 3. For a non-dir pattern without slashes (e.g. "foo", "*.c")
+        #    It should match if any component of the path matches, or the whole path.
+        #    This is often interpreted as `**/pattern` or `**/pattern/**` if we were to make it explicit.
+        #    The current `_fnmatch_gitignore` will do exact match or simple glob on `file_path`.
+        #    e.g. pattern "test", path "src/test/main.c" -> fnmatch("src/test/main.c", "test") is false.
+        #    We need to check components.
+        #    `Path(file_path).name` was already checked.
+        #    So check intermediate directory names.
+        path_parts = Path(file_path).parts
+        if len(path_parts) > 1: # If there are directory components
+            for part in path_parts[:-1]: # Iterate over directory components
+                if self._fnmatch_gitignore(part, pattern):
+                    return True
+
+        # Fallback: check if the pattern matches the entire relative path string.
+        # This handles cases like pattern "foo" and file_path "foo" (a file at gitignore_dir level).
+        # This was implicitly covered by basename check if path_parts has only 1 element.
+        # If pattern="foo" and file_path="foo", Path(file_path).name is "foo", matches.
+        # If pattern="internal.h" and file_path="include/internal.h", basename matches.
+        # If pattern="archive" and file_path="src/archive/old.zip", basename is "old.zip", dir part "archive" matches.
+
+        # If we reach here, it means:
+        # - Basename didn't match (or if it did, is_dir_pattern made it false).
+        # - If is_dir_pattern, no directory component matched.
+        # - If not is_dir_pattern, no directory component matched pattern.
+        # This implies no match.
+        return False
+
 
     def _match_recursive_pattern(self, file_path: str, pattern: str) -> bool:
         """
@@ -212,34 +325,24 @@ class GitIgnoreHandler:
         Returns:
             bool: True if pattern matches, False otherwise.
         """
-        # Convert '**' to a regex-like pattern for fnmatch
-        # '**/' matches zero or more directories
-        pattern_parts = pattern.split("**")
+        # fnmatch in Python's standard library is generally capable of handling '**'
+        # in a way that's compatible with .gitignore usage, especially when paths
+        # are normalized to use forward slashes.
+        # For example:
+        # fnmatch.fnmatch('a/b/c/d.txt', 'a/**/d.txt') -> True
+        # fnmatch.fnmatch('a/d.txt', 'a/**/d.txt') -> True (zero directories for **)
+        # fnmatch.fnmatch('foo.txt', '**/foo.txt') -> True
+        # fnmatch.fnmatch('a/b/foo.txt', '**/foo.txt') -> True
+        # fnmatch.fnmatch('a/b/foo.txt', 'a/**') -> True
 
-        if len(pattern_parts) == 2:
-            prefix, suffix = pattern_parts
-            prefix = prefix.rstrip("/")
-            suffix = suffix.lstrip("/")
+        # If the pattern is literally just "**", it should match everything.
+        # This is a common interpretation for glob patterns.
+        if pattern == "**":
+            return True
 
-            # Handle case where pattern is just '**'
-            if not prefix and not suffix:
-                return True
-
-            # Handle '**' at the beginning
-            if not prefix:
-                return file_path.endswith(suffix) or ("/" + suffix) in file_path
-
-            # Handle '**' at the end
-            if not suffix:
-                return file_path.startswith(prefix)
-
-            # Handle '**' in the middle
-            return file_path.startswith(prefix) and (
-                file_path.endswith(suffix) or ("/" + suffix) in file_path
-            )
-
-        # Multiple '**' patterns - use simple approach
-        return self._fnmatch_gitignore(file_path, pattern.replace("**", "*"))
+        # Otherwise, delegate directly to fnmatch.
+        # The key is that file_path and pattern are already normalized (e.g. forward slashes).
+        return self._fnmatch_gitignore(file_path, pattern)
 
     def _fnmatch_gitignore(self, path: str, pattern: str) -> bool:
         """
@@ -253,10 +356,19 @@ class GitIgnoreHandler:
             bool: True if pattern matches, False otherwise.
         """
         try:
+            # Ensure path and pattern are strings, though type hints should guarantee this
+            if not isinstance(path, str) or not isinstance(pattern, str):
+                self.logger.warning(
+                    f"fnmatch_gitignore called with non-string arguments: path type {type(path)}, pattern type {type(pattern)}"
+                )
+                return False
             return fnmatch.fnmatch(path, pattern)
-        except (ValueError, TypeError):
-            # Fallback to simple string matching if fnmatch fails
-            return pattern in path
+        except Exception as e:
+            # Log unexpected errors during fnmatch processing but treat as no match
+            self.logger.warning(
+                f"Error during fnmatch for path='{path}', pattern='{pattern}': {e}"
+            )
+            return False
 
     def get_ignore_patterns_for_exclusions(self) -> List[str]:
         """

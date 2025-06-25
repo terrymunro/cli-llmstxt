@@ -11,7 +11,7 @@ dependencies = [
   "llama-index",
   "llama-index-llms-openai",
   "llama-index-readers-file",
-  "gitpython",
+  "GitPython",
   "python-dotenv",
   "openai",
 ]
