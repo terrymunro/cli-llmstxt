@@ -4,7 +4,7 @@
 import os
 import logging
 from llama_index.llms.openai import OpenAI
-from llmstxt.config import OPENAI_API_KEY, DEFAULT_MODEL_NAME
+from llmstxt.config import DEFAULT_MODEL_NAME
 from llmstxt.mock_llm import MockLLM, get_mock_response_synthesizer as get_mock_synth
 from llama_index.core.response_synthesizers import (
     get_response_synthesizer,
